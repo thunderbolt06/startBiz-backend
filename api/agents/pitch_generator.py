@@ -400,37 +400,130 @@ def html_to_pdf(html_content: str) -> bytes:
     return pdf_bytes
 
 
+def _build_narration_script(slides: list) -> str:
+    """Concatenates slide speaker notes into a single narration script."""
+    parts = []
+    for slide in slides:
+        notes = slide.get("speaker_notes", "")
+        title = slide.get("title", "")
+        if notes:
+            parts.append(f"{title}. {notes}")
+    return "  ".join(parts).strip()
+
+
+def _google_tts(script: str, api_key: str) -> bytes:
+    """
+    Calls the Google Cloud Text-to-Speech REST API.
+    Splits long scripts into ≤4900-char chunks and concatenates MP3 bytes.
+    Raises on any failure so the caller can fall back to ElevenLabs.
+    """
+    import base64
+    import requests
+
+    GOOGLE_TTS_URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
+    CHUNK_SIZE = 4900
+
+    def _synthesize_chunk(text: str) -> bytes:
+        payload = {
+            "input": {"text": text},
+            "voice": {
+                "languageCode": "en-US",
+                "name": "en-US-Neural2-D",
+                "ssmlGender": "MALE",
+            },
+            "audioConfig": {"audioEncoding": "MP3", "speakingRate": 0.95},
+        }
+        resp = requests.post(
+            GOOGLE_TTS_URL,
+            params={"key": api_key},
+            json=payload,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return base64.b64decode(resp.json()["audioContent"])
+
+    # Split into word-boundary chunks if needed
+    if len(script) <= CHUNK_SIZE:
+        return _synthesize_chunk(script)
+
+    chunks, cursor = [], 0
+    while cursor < len(script):
+        end = cursor + CHUNK_SIZE
+        if end >= len(script):
+            chunk = script[cursor:]
+        else:
+            # Break at last space within the limit
+            end = script.rfind(" ", cursor, end) or end
+            chunk = script[cursor:end]
+        chunks.append(chunk.strip())
+        cursor = end
+
+    return b"".join(_synthesize_chunk(c) for c in chunks if c)
+
+
 def generate_audio_narration(slides: list) -> bytes | None:
     """
-    Generates MP3 audio narration from slide speaker notes via Google Cloud TTS.
-    Returns raw MP3 bytes or None if TTS is not configured.
+    Generates MP3 audio narration from slide speaker notes.
+    Primary: Google Cloud TTS.
+    Fallback: ElevenLabs (if Google fails or key is missing).
+    Returns raw MP3 bytes or None if both providers are unavailable.
     """
+    import logging
+    import os
+    from dotenv import load_dotenv
+    from pathlib import Path
+
+    logger = logging.getLogger(__name__)
+
+    # Re-read .env so keys are always fresh in Celery worker processes
+    _env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+    load_dotenv(dotenv_path=_env_path, override=True)
+
+    script = _build_narration_script(slides)
+    if not script:
+        logger.warning("No speaker notes in slides — skipping audio narration")
+        return None
+
+    logger.info(f"Narration script: {len(script)} chars")
+
+    # ── Primary: Google TTS ──────────────────────────────────────────────────
+    google_key = os.environ.get("GOOGLE_TTS_API_KEY", "").strip().strip('"').strip("'")
+    if google_key:
+        try:
+            logger.info("Generating audio via Google Cloud TTS")
+            audio_bytes = _google_tts(script, google_key)
+            logger.info(f"Google TTS succeeded ({len(audio_bytes):,} bytes)")
+            return audio_bytes
+        except Exception as exc:
+            logger.warning(f"Google TTS failed ({exc}) — falling back to ElevenLabs")
+    else:
+        logger.warning("GOOGLE_TTS_API_KEY not set — falling back to ElevenLabs")
+
+    # ── Fallback: ElevenLabs ─────────────────────────────────────────────────
+    el_key = os.environ.get("ELEVENLABS_API_KEY", "").strip().strip('"').strip("'")
+    if not el_key:
+        logger.warning("ELEVENLABS_API_KEY not set — skipping audio narration")
+        return None
+
     try:
-        from google.cloud import texttospeech
+        from elevenlabs.client import ElevenLabs
 
-        client = texttospeech.TextToSpeechClient()
-        full_script = ""
-        for slide in slides:
-            notes = slide.get("speaker_notes", "")
-            title = slide.get("title", "")
-            if notes:
-                full_script += f"{title}. {notes} ... "
+        el_script = script
+        if len(el_script) > 4900:
+            el_script = el_script[:4900].rsplit(" ", 1)[0]
+            logger.info(f"Truncated to {len(el_script)} chars for ElevenLabs limit")
 
-        if not full_script.strip():
-            return None
-
-        synthesis_input = texttospeech.SynthesisInput(text=full_script)
-        voice = texttospeech.VoiceSelectionParams(
-            language_code="en-US",
-            name="en-US-Neural2-D",
-            ssml_gender=texttospeech.SsmlVoiceGender.MALE,
+        logger.info(f"Generating audio via ElevenLabs ({len(el_script)} chars)")
+        client = ElevenLabs(api_key=el_key)
+        audio_chunks = client.text_to_speech.convert(
+            text=el_script,
+            voice_id="JBFqnCBsd6RMkjVDRZzb",
+            model_id="eleven_multilingual_v2",
+            output_format="mp3_44100_128",
         )
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3
-        )
-        response = client.synthesize_speech(
-            input=synthesis_input, voice=voice, audio_config=audio_config
-        )
-        return response.audio_content
-    except Exception:
+        audio_bytes = b"".join(audio_chunks)
+        logger.info(f"ElevenLabs audio succeeded ({len(audio_bytes):,} bytes)")
+        return audio_bytes
+    except Exception as exc:
+        logger.error(f"ElevenLabs audio generation failed: {exc}", exc_info=True)
         return None

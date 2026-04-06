@@ -133,6 +133,7 @@ GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image-preview"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
+GOOGLE_TTS_API_KEY = os.getenv("GOOGLE_TTS_API_KEY", "")
 
 _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 CELERY_BROKER_URL = _redis_url
