@@ -59,7 +59,15 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 _database_url = os.getenv("DATABASE_URL")
 if _database_url:
-    DATABASES = {"default": dj_database_url.parse(_database_url, conn_max_age=600, ssl_require=True)}
+    DATABASES = {
+        "default": dj_database_url.parse(
+            _database_url,
+            conn_max_age=0,       # Required for PgBouncer transaction mode
+            ssl_require=True,
+        )
+    }
+    # PgBouncer transaction mode does not support server-side cursors
+    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 else:
     _db_path = os.getenv("DB_PATH", str(BASE_DIR / "db.sqlite3"))
     DATABASES = {
