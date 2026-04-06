@@ -1,6 +1,7 @@
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+import dj_database_url
 
 load_dotenv()
 
@@ -56,13 +57,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-_db_path = os.getenv("DB_PATH", str(BASE_DIR / "db.sqlite3"))
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": _db_path,
+_database_url = os.getenv("DATABASE_URL")
+if _database_url:
+    DATABASES = {"default": dj_database_url.parse(_database_url, conn_max_age=600, ssl_require=True)}
+else:
+    _db_path = os.getenv("DB_PATH", str(BASE_DIR / "db.sqlite3"))
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": _db_path,
+        }
     }
-}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -119,7 +124,19 @@ GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image-preview"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
 
-CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+_redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CELERY_BROKER_URL = _redis_url
+CELERY_RESULT_BACKEND = _redis_url
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+# Use SSL for Upstash (rediss://) — broker_use_ssl lets Celery trust the cert
+if _redis_url.startswith("rediss://"):
+    import ssl as _ssl
+    _ssl_opts = {"ssl_cert_reqs": _ssl.CERT_NONE}
+    CELERY_BROKER_USE_SSL = _ssl_opts
+    CELERY_REDIS_BACKEND_USE_SSL = _ssl_opts
+
+# Upstash REST API (used for health checks / lightweight ops)
+UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL", "")
+UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
