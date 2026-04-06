@@ -57,10 +57,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-_database_url = os.getenv("DATABASE_URL")
+_database_url = os.getenv("DATABASE_URL", "").strip()  # strip any trailing newline from env injection
 if _database_url:
     # Strip pgbouncer=true — it's a Supabase hint, not a valid psycopg2 option
-    _clean_db_url = _database_url.replace("?pgbouncer=true&", "?").replace("&pgbouncer=true", "").replace("?pgbouncer=true", "")
+    _clean_db_url = _database_url.replace("?pgbouncer=true&", "?").replace("&pgbouncer=true", "").replace("?pgbouncer=true", "").strip()
     DATABASES = {
         "default": dj_database_url.parse(
             _clean_db_url,
