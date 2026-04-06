@@ -59,10 +59,12 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 _database_url = os.getenv("DATABASE_URL")
 if _database_url:
+    # Strip pgbouncer=true — it's a Supabase hint, not a valid psycopg2 option
+    _clean_db_url = _database_url.replace("?pgbouncer=true&", "?").replace("&pgbouncer=true", "").replace("?pgbouncer=true", "")
     DATABASES = {
         "default": dj_database_url.parse(
-            _database_url,
-            conn_max_age=0,       # Required for PgBouncer transaction mode
+            _clean_db_url,
+            conn_max_age=0,  # Required for PgBouncer transaction mode
             ssl_require=True,
         )
     }
