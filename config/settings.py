@@ -1,7 +1,6 @@
 from pathlib import Path
 from dotenv import load_dotenv
 import os
-import dj_database_url
 
 load_dotenv()
 
@@ -57,30 +56,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-_database_url = os.getenv("DATABASE_URL", "").strip()  # strip any trailing newline from env injection
-if _database_url:
-    # Strip pgbouncer=true — it's a Supabase hint, not a valid psycopg2 option
-    _clean_db_url = _database_url.replace("?pgbouncer=true&", "?").replace("&pgbouncer=true", "").replace("?pgbouncer=true", "").strip()
-    # Only require SSL for remote (Supabase) connections, not local
-    _is_remote = not any(h in _clean_db_url for h in ["localhost", "127.0.0.1"])
-    DATABASES = {
-        "default": dj_database_url.parse(
-            _clean_db_url,
-            conn_max_age=0,
-            ssl_require=_is_remote,
-        )
+_db_path = os.getenv("DB_PATH", str(BASE_DIR / "db.sqlite3"))
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": _db_path,
+        "OPTIONS": {
+            # Allow background threads to share the connection and survive
+            # the brief write contention during the research pipeline.
+            "timeout": 30,
+        },
     }
-    if _is_remote:
-        # PgBouncer transaction mode does not support server-side cursors
-        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
-else:
-    _db_path = os.getenv("DB_PATH", str(BASE_DIR / "db.sqlite3"))
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": _db_path,
-        }
-    }
+}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -174,19 +161,3 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
 GOOGLE_TTS_API_KEY = os.getenv("GOOGLE_TTS_API_KEY", "")
 
-_redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-CELERY_BROKER_URL = _redis_url
-CELERY_RESULT_BACKEND = _redis_url
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-# Use SSL for Upstash (rediss://) — broker_use_ssl lets Celery trust the cert
-if _redis_url.startswith("rediss://"):
-    import ssl as _ssl
-    _ssl_opts = {"ssl_cert_reqs": _ssl.CERT_NONE}
-    CELERY_BROKER_USE_SSL = _ssl_opts
-    CELERY_REDIS_BACKEND_USE_SSL = _ssl_opts
-
-# Upstash REST API (used for health checks / lightweight ops)
-UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL", "")
-UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")

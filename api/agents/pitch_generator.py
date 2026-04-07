@@ -488,7 +488,7 @@ def generate_audio_narration(slides: list) -> bytes | None:
 
     logger = logging.getLogger(__name__)
 
-    # Re-read .env so keys are always fresh in Celery worker processes
+    # Re-read .env so keys are always available
     _env_path = Path(__file__).resolve().parent.parent.parent / ".env"
     load_dotenv(dotenv_path=_env_path, override=True)
 

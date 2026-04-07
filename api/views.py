@@ -4,6 +4,7 @@ API Views for StartBiz Validator
 
 import json
 import time
+import threading
 import logging
 from django.http import StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -103,7 +104,7 @@ def validate_session(request, session_id):
 def start_research(request, session_id):
     """
     POST /api/sessions/{id}/research/
-    Kicks off the full agentic research pipeline as a background Celery task.
+    Kicks off the full agentic research pipeline in a background thread.
     """
     try:
         session = ResearchSession.objects.get(id=session_id)
@@ -126,7 +127,13 @@ def start_research(request, session_id):
         session.status = SessionStatus.PENDING
         session.save(update_fields=["prompt", "status"])
 
-    run_full_research.delay(str(session.id))
+    t = threading.Thread(
+        target=run_full_research,
+        args=(str(session.id),),
+        daemon=True,
+        name=f"research-{session.id}",
+    )
+    t.start()
 
     return Response({
         "message": "Research started",
