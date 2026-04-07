@@ -5,7 +5,6 @@ API Views for StartBiz Validator
 import json
 import time
 import logging
-from django.db import transaction
 from django.http import StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
@@ -127,7 +126,7 @@ def start_research(request, session_id):
         session.status = SessionStatus.PENDING
         session.save(update_fields=["prompt", "status"])
 
-    transaction.on_commit(lambda: run_full_research.delay(str(session.id)))
+    run_full_research.delay(str(session.id))
 
     return Response({
         "message": "Research started",

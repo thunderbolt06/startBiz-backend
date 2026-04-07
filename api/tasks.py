@@ -107,7 +107,7 @@ def run_full_research(self, session_id: str):
 
         if audio_bytes:
             session.audio_file.save(
-                f"narration_{session_id}.mp3",
+                f"narration_{session_id}.wav",
                 ContentFile(audio_bytes),
                 save=False,
             )

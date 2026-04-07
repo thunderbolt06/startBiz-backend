@@ -61,15 +61,18 @@ _database_url = os.getenv("DATABASE_URL", "").strip()  # strip any trailing newl
 if _database_url:
     # Strip pgbouncer=true — it's a Supabase hint, not a valid psycopg2 option
     _clean_db_url = _database_url.replace("?pgbouncer=true&", "?").replace("&pgbouncer=true", "").replace("?pgbouncer=true", "").strip()
+    # Only require SSL for remote (Supabase) connections, not local
+    _is_remote = not any(h in _clean_db_url for h in ["localhost", "127.0.0.1"])
     DATABASES = {
         "default": dj_database_url.parse(
             _clean_db_url,
-            conn_max_age=0,  # Required for PgBouncer transaction mode
-            ssl_require=True,
+            conn_max_age=0,
+            ssl_require=_is_remote,
         )
     }
-    # PgBouncer transaction mode does not support server-side cursors
-    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    if _is_remote:
+        # PgBouncer transaction mode does not support server-side cursors
+        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 else:
     _db_path = os.getenv("DB_PATH", str(BASE_DIR / "db.sqlite3"))
     DATABASES = {
@@ -85,6 +88,42 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "%(levelname)s %(asctime)s %(name)s %(message)s "
+                      "[trace_id=%(otelTraceID)s span_id=%(otelSpanID)s]",
+        },
+        "simple": {
+            "format": "%(levelname)s %(name)s %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": os.getenv("LOG_LEVEL", "INFO"),
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": os.getenv("DJANGO_LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+        "api": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+    },
+}
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"

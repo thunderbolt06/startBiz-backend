@@ -411,62 +411,75 @@ def _build_narration_script(slides: list) -> str:
     return "  ".join(parts).strip()
 
 
-def _google_tts(script: str, api_key: str) -> bytes:
+def _gemini_tts(script: str, api_key: str) -> bytes:
     """
-    Calls the Google Cloud Text-to-Speech REST API.
-    Splits long scripts into ≤4900-char chunks and concatenates MP3 bytes.
+    Calls the Gemini TTS API (gemini-2.5-flash-preview-tts).
+    Splits long scripts into ≤4800-char word-boundary chunks, synthesizes each
+    to raw PCM (16-bit, 24 kHz, mono), concatenates the PCM frames, then wraps
+    the result in a valid WAV container.
     Raises on any failure so the caller can fall back to ElevenLabs.
     """
-    import base64
-    import requests
+    import io
+    import wave
+    from google import genai
+    from google.genai import types
 
-    GOOGLE_TTS_URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
-    CHUNK_SIZE = 4900
+    CHUNK_SIZE = 4800
+    SAMPLE_RATE = 24000
+
+    client = genai.Client(api_key=api_key)
 
     def _synthesize_chunk(text: str) -> bytes:
-        payload = {
-            "input": {"text": text},
-            "voice": {
-                "languageCode": "en-US",
-                "name": "en-US-Neural2-D",
-                "ssmlGender": "MALE",
-            },
-            "audioConfig": {"audioEncoding": "MP3", "speakingRate": 0.95},
-        }
-        resp = requests.post(
-            GOOGLE_TTS_URL,
-            params={"key": api_key},
-            json=payload,
-            timeout=30,
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-tts",
+            contents=text,
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name="Charon",
+                        )
+                    )
+                ),
+            ),
         )
-        resp.raise_for_status()
-        return base64.b64decode(resp.json()["audioContent"])
+        return response.candidates[0].content.parts[0].inline_data.data
 
-    # Split into word-boundary chunks if needed
+    def _pcm_to_wav(pcm_data: bytes) -> bytes:
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)  # 16-bit = 2 bytes per sample
+            wf.setframerate(SAMPLE_RATE)
+            wf.writeframes(pcm_data)
+        return buf.getvalue()
+
     if len(script) <= CHUNK_SIZE:
-        return _synthesize_chunk(script)
+        return _pcm_to_wav(_synthesize_chunk(script))
 
+    # Split at word boundaries
     chunks, cursor = [], 0
     while cursor < len(script):
         end = cursor + CHUNK_SIZE
         if end >= len(script):
             chunk = script[cursor:]
         else:
-            # Break at last space within the limit
             end = script.rfind(" ", cursor, end) or end
             chunk = script[cursor:end]
         chunks.append(chunk.strip())
         cursor = end
 
-    return b"".join(_synthesize_chunk(c) for c in chunks if c)
+    all_pcm = b"".join(_synthesize_chunk(c) for c in chunks if c)
+    return _pcm_to_wav(all_pcm)
 
 
 def generate_audio_narration(slides: list) -> bytes | None:
     """
-    Generates MP3 audio narration from slide speaker notes.
-    Primary: Google Cloud TTS.
-    Fallback: ElevenLabs (if Google fails or key is missing).
-    Returns raw MP3 bytes or None if both providers are unavailable.
+    Generates WAV audio narration from slide speaker notes.
+    Primary: Gemini TTS (gemini-2.5-flash-preview-tts) via GEMINI_API_KEY.
+    Fallback: ElevenLabs (if Gemini fails or key is missing).
+    Returns raw WAV bytes (or MP3 bytes from ElevenLabs) or None if both providers are unavailable.
     """
     import logging
     import os
@@ -486,18 +499,18 @@ def generate_audio_narration(slides: list) -> bytes | None:
 
     logger.info(f"Narration script: {len(script)} chars")
 
-    # ── Primary: Google TTS ──────────────────────────────────────────────────
-    google_key = os.environ.get("GOOGLE_TTS_API_KEY", "").strip().strip('"').strip("'")
-    if google_key:
+    # ── Primary: Gemini TTS ──────────────────────────────────────────────────
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip().strip('"').strip("'")
+    if gemini_key:
         try:
-            logger.info("Generating audio via Google Cloud TTS")
-            audio_bytes = _google_tts(script, google_key)
-            logger.info(f"Google TTS succeeded ({len(audio_bytes):,} bytes)")
+            logger.info("Generating audio via Gemini TTS (gemini-2.5-flash-preview-tts)")
+            audio_bytes = _gemini_tts(script, gemini_key)
+            logger.info(f"Gemini TTS succeeded ({len(audio_bytes):,} bytes)")
             return audio_bytes
         except Exception as exc:
-            logger.warning(f"Google TTS failed ({exc}) — falling back to ElevenLabs")
+            logger.warning(f"Gemini TTS failed ({exc}) — falling back to ElevenLabs")
     else:
-        logger.warning("GOOGLE_TTS_API_KEY not set — falling back to ElevenLabs")
+        logger.warning("GEMINI_API_KEY not set — falling back to ElevenLabs")
 
     # ── Fallback: ElevenLabs ─────────────────────────────────────────────────
     el_key = os.environ.get("ELEVENLABS_API_KEY", "").strip().strip('"').strip("'")

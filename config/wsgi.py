@@ -2,6 +2,9 @@ import os
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
+from config.tracing import setup_tracing
+setup_tracing()
+
 from django.core.wsgi import get_wsgi_application
 
 application = get_wsgi_application()
