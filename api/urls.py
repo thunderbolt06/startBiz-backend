@@ -8,4 +8,6 @@ urlpatterns = [
     path("sessions/<uuid:session_id>/research/", views.start_research, name="start_research"),
     path("sessions/<uuid:session_id>/stream/", views.stream_session, name="stream_session"),
     path("sessions/<uuid:session_id>/results/", views.get_results, name="get_results"),
+    path("sessions/<uuid:session_id>/pdf/", views.serve_pdf, name="serve_pdf"),
+    path("sessions/<uuid:session_id>/audio/", views.serve_audio, name="serve_audio"),
 ]

@@ -4,7 +4,6 @@ No external queue or broker required.
 """
 
 import logging
-from django.core.files.base import ContentFile
 from django.db import close_old_connections
 
 from api.models import ResearchSession, SessionStatus
@@ -103,18 +102,10 @@ def run_full_research(session_id: str):
             session.tool_results = tool_results
 
             if pdf_bytes:
-                session.pdf_file.save(
-                    f"pitch_{session_id}.pdf",
-                    ContentFile(pdf_bytes),
-                    save=False,
-                )
+                session.pdf_bytes = pdf_bytes
 
             if audio_bytes:
-                session.audio_file.save(
-                    f"narration_{session_id}.wav",
-                    ContentFile(audio_bytes),
-                    save=False,
-                )
+                session.audio_bytes = audio_bytes
 
             session.status = SessionStatus.COMPLETED
             session.save()

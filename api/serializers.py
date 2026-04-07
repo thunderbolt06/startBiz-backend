@@ -33,17 +33,15 @@ class ResearchSessionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_pdf_url(self, obj) -> str | None:
-        if obj.pdf_file:
+        if obj.pdf_bytes:
             request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.pdf_file.url)
-            return obj.pdf_file.url
+            url = f"/api/sessions/{obj.id}/pdf/"
+            return request.build_absolute_uri(url) if request else url
         return None
 
     def get_audio_url(self, obj) -> str | None:
-        if obj.audio_file:
+        if obj.audio_bytes:
             request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.audio_file.url)
-            return obj.audio_file.url
+            url = f"/api/sessions/{obj.id}/audio/"
+            return request.build_absolute_uri(url) if request else url
         return None

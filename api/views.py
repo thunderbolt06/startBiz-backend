@@ -6,7 +6,8 @@ import json
 import time
 import threading
 import logging
-from django.http import StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
+from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 from rest_framework import status
@@ -219,6 +220,34 @@ def get_results(request, session_id):
     return Response(
         ResearchSessionSerializer(session, context={"request": request}).data
     )
+
+
+@require_GET
+def serve_pdf(request, session_id):
+    """
+    GET /api/sessions/{id}/pdf/
+    Streams the generated PDF pitch deck stored in the database.
+    """
+    session = get_object_or_404(ResearchSession, id=session_id)
+    if not session.pdf_bytes:
+        return HttpResponse(status=404)
+    response = HttpResponse(bytes(session.pdf_bytes), content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="pitch_{session_id}.pdf"'
+    return response
+
+
+@require_GET
+def serve_audio(request, session_id):
+    """
+    GET /api/sessions/{id}/audio/
+    Streams the generated audio narration stored in the database.
+    """
+    session = get_object_or_404(ResearchSession, id=session_id)
+    if not session.audio_bytes:
+        return HttpResponse(status=404)
+    response = HttpResponse(bytes(session.audio_bytes), content_type="audio/wav")
+    response["Content-Disposition"] = f'inline; filename="narration_{session_id}.wav"'
+    return response
 
 
 def _status_to_step(status: str) -> int:

@@ -29,6 +29,8 @@ class ResearchSession(models.Model):
     slides_json = models.JSONField(default=list, blank=True)
     pdf_file = models.FileField(upload_to="pdfs/", blank=True, null=True)
     audio_file = models.FileField(upload_to="audio/", blank=True, null=True)
+    pdf_bytes = models.BinaryField(null=True, blank=True)
+    audio_bytes = models.BinaryField(null=True, blank=True)
     error_message = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
