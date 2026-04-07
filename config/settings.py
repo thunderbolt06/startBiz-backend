@@ -131,6 +131,7 @@ _extra_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://ai-consultancy.thechalklabs.com",
 ] + [o.strip() for o in _extra_origins.split(",") if o.strip()]
 CORS_ALLOW_HEADERS = [
     "accept",
